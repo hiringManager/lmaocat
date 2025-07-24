@@ -1,0 +1,96 @@
+#!/bin/bash
+
+# Default Configuration
+mode="char"
+group=1
+use_bg=false
+dull=false
+count=0
+
+# Parse Command Line Arguments
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -l)
+      mode="line"
+      [[ "$2" =~ ^[0-9]+$ ]] && group=$2 && shift
+      ;;
+    -c)
+      mode="char"
+      [[ "$2" =~ ^[0-9]+$ ]] && group=$2 && shift
+      ;;
+    -b)
+      use_bg=true
+      ;;
+    --dull)
+      dull=true
+      ;;
+  esac
+  shift
+done
+
+# Generate and Prepare Palette
+colors=(30 31 32 33 34 35 36 37 90 91 92 93 94 95 96 97)
+
+if $dull; then
+  # Remove black (30) and white (97)
+  colors=("${colors[@]/30}")
+  colors=("${colors[@]/97}")
+fi
+
+colors=($(shuf -e "${colors[@]}"))
+
+# Coloring Logic
+colorize() {
+  local code="$1"
+  local text="$2"
+
+  if $use_bg; then
+    # Translate to background color code (40+ / 100+)
+    local bg_code=$(( code >= 90 ? code + 10 : code + 10 ))
+    printf "\e[%sm%s\e[0m" "$bg_code" "$text"
+  else
+    printf "\e[%sm%s\e[0m" "$code" "$text"
+  fi
+}
+
+color_line_mode() {
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    local color_index=$(((count / group) % ${#colors[@]}))
+    colorize "${colors[$color_index]}" "$line"
+    printf "\n"
+    ((count++))
+  done
+}
+
+color_char_mode() {
+  while IFS= read -rN1 char; do
+    case "$char" in
+      $'\033')  # Handle escape sequences (e.g. for ANSI art)
+        local esc="$char"
+        while IFS= read -rN1 next; do
+          esc+="$next"
+          [[ "$next" =~ [a-zA-Z] ]] && break
+        done
+        printf "%s" "$esc"
+        ;;
+      $'\n')
+        printf "\n"
+        ;;
+      *)
+        if [[ -n "$char" ]]; then
+          local color_index=$(((count / group) % ${#colors[@]}))
+          colorize "${colors[$color_index]}" "$char"
+          ((count++))
+        fi
+        ;;
+    esac
+  done
+}
+
+# Main Execution
+if [[ "$mode" == "line" ]]; then
+  color_line_mode
+else
+  color_char_mode
+fi
+
