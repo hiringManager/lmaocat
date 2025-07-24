@@ -70,7 +70,7 @@ echo "Listen to My Chemical Romance" | lmaocat -c 5
 
 ## Why Bash?
 
-Because fuck you, that's why.
+UwU
 
 ---
 
