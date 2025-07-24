@@ -5,6 +5,9 @@
 
 ---
 
+[2025-07-24 03-18-30_trimmed_0-02_0-48.webm](https://github.com/user-attachments/assets/d4155829-eb81-4dc6-ae18-28a08b64095d)
+
+
 ## Features
 
 - Supports both **line-by-line** and **character-by-character** colorization
