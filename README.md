@@ -15,6 +15,9 @@
 - Randomized color order for each run
 - Easily configurable group size (how many lines/chars per color)
 - Works great with ASCII art, or shitpost pipelines
+- Added Truecolor support with the --avg switch.
+- Added grading for predictable usage of output.
+- Added example tests for usage.
 
 ---
 
@@ -26,16 +29,20 @@ lmaocat [OPTIONS]
 
 It reads from standard input and colorizes the output.
 
-### 🔧 Options
+### Options
 
-| Flag        | Description                                               |
-|-------------|-----------------------------------------------------------|
-| `-c [N]`    | Character mode (default). Group N characters per color    |
-| `-l [N]`    | Line mode. Group N lines per color                        |
-| `-b`        | Use **background** color instead of foreground            |
-| `--dull`    | Excludes terminal colors 0 and 15 (often black and white) |
+| Option   | Description                                               |
+| -------- | --------------------------------------------------------- |
+| `-c [N]` | Character mode — group every N characters (default: 1)    |
+| `-l [N]` | Line mode — group every N lines                           |
+| `-b`     | Use background color instead of foreground                |
+| `-g`     | Grade colors from light → dark (deterministic order)      |
+| `--dull` | Skip color 0 (black) and 15 (white) in the palette        |
+| `--avg`  | Enable truecolor output (RGB interpolation across groups) |
+| `--test` | Run a visual test suite in all supported modes            |
 
 > **Default:** character mode with 1 character per color (`-c 1`)
+Keep in mind that the -l switch is very unpredictable with anything that clears/updates the terminal. It's only useful for simple stdin values.
 
 ---
 

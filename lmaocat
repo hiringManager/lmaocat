@@ -1,13 +1,64 @@
 #!/bin/bash
 
+# ------------------------------
 # Default Configuration
+# ------------------------------
+# Switches:
+#   -c [N]   – char mode, group by N characters (default 1)
+#   -l [N]   – line mode, group by N lines
+#   -b       – use background color instead of foreground
+#   --dull   – remove color 0 (black) and 15 (white) from palette
+#   -g       – enable color grading from light to dark
+#   --avg    – enable RGB interpolation across grouped items
+#   --test   – run visual test suite for various modes
+
 mode="char"
 group=1
 use_bg=false
 dull=false
+grade=false
+average=false
 count=0
 
+# ------------------------------
 # Parse Command Line Arguments
+# ------------------------------
+if [[ "$1" == "--test" ]]; then
+  run_tests() {
+    echo -e "\n-- Test: -c 1 (char every 1) --"
+    echo "Hello colorful world!" | bash "$0" -c 1
+
+    echo -e "\n-- Test: -c 5 --"
+    echo "Chunky rainbowy stream." | bash "$0" -c 5
+
+    echo -e "\n-- Test: -l 1 --"
+    printf "First line\nSecond line\nThird line\n" | bash "$0" -l 1
+
+    echo -e "\n-- Test: -l 2 --"
+    printf "A\nB\nC\nD\nE\n" | bash "$0" -l 2
+
+    echo -e "\n-- Test: -c 5 --avg --"
+    echo "Interpolated colors are cool" | bash "$0" -c 5 --avg
+
+    echo -e "\n-- Test: -l 2 --avg --"
+    printf "Fade\nMe\nPlease\nNow\n" | bash "$0" -l 2 --avg
+
+    echo -e "\n-- Test: -l 1 --avg --"
+    printf "Fade\nFull\nLine\nAverage\n" | bash "$0" -l 1 --avg
+
+    echo -e "\n-- Test: -c 1 -g --"
+    echo "Graded from light to dark" | bash "$0" -c 1 -g
+
+    echo -e "\n-- Test: -c 1 -b --"
+    echo "Background color test" | bash "$0" -c 1 -b
+
+    echo -e "\n-- Test: -c 1 --dull --"
+    echo "No black or white" | bash "$0" -c 1 --dull
+  }
+  run_tests
+  exit 0
+fi
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -l)
@@ -24,70 +75,164 @@ while [[ $# -gt 0 ]]; do
     --dull)
       dull=true
       ;;
+    -g)
+      grade=true
+      ;;
+    --avg)
+      average=true
+      ;;
   esac
   shift
 done
 
-# Generate and Prepare Palette
-colors=(30 31 32 33 34 35 36 37 90 91 92 93 94 95 96 97)
+# ------------------------------
+# Color Maps
+# ------------------------------
+ansi_colors=(30 31 32 33 34 35 36 37 90 91 92 93 94 95 96 97)
+ansi_rgb=( "0;0;0" "128;0;0" "0;128;0" "128;128;0" "0;0;128" "128;0;128" "0;128;128" "192;192;192" \
+           "128;128;128" "255;0;0" "0;255;0" "255;255;0" "0;0;255" "255;0;255" "0;255;255" "255;255;255" )
 
+graded_order=(97 37 96 36 95 35 94 34 93 33 92 32 91 31 90 30)
 if $dull; then
-  # Remove black (30) and white (97)
-  colors=("${colors[@]/30}")
-  colors=("${colors[@]/97}")
+  graded_order=( $(for c in "${graded_order[@]}"; do [[ "$c" != 30 && "$c" != 97 ]] && echo "$c"; done) )
 fi
 
-colors=($(shuf -e "${colors[@]}"))
+if $grade; then
+  colors=("${graded_order[@]}")
+else
+  colors=( $(shuf -e "${graded_order[@]}") )
+fi
 
-# Coloring Logic
-colorize() {
-  local code="$1"
-  local text="$2"
+# ------------------------------
+# Helpers
+# ------------------------------
+rgb_for_code() {
+  local code=$1
+  for i in "${!ansi_colors[@]}"; do
+    [[ ${ansi_colors[$i]} -eq $code ]] && echo "${ansi_rgb[$i]}" && return
+  done
+  echo "255;255;255"
+}
 
+mix_rgb() {
+  local c1=($1)
+  local c2=($2)
+  local steps=$3
+  local out=()
+  for ((i=0; i<steps; i++)); do
+    r=$(( (${c1[0]} * (steps - i) + ${c2[0]} * i) / steps ))
+    g=$(( (${c1[1]} * (steps - i) + ${c2[1]} * i) / steps ))
+    b=$(( (${c1[2]} * (steps - i) + ${c2[2]} * i) / steps ))
+    out+=("$r;$g;$b")
+  done
+  echo "${out[@]}"
+}
+
+colorize_rgb() {
+  local rgb=$1
+  local txt=$2
   if $use_bg; then
-    # Translate to background color code (40+ / 100+)
-    local bg_code=$(( code >= 90 ? code + 10 : code + 10 ))
-    printf "\e[%sm%s\e[0m" "$bg_code" "$text"
+    printf "\e[48;2;%sm%s\e[0m" "$rgb" "$txt"
   else
-    printf "\e[%sm%s\e[0m" "$code" "$text"
+    printf "\e[38;2;%sm%s\e[0m" "$rgb" "$txt"
+  fi
+}
+
+colorize() {
+  local code=$1
+  local txt=$2
+  if $use_bg; then
+    bg_code=$(( code + 10 ))
+    printf "\e[%sm%s\e[0m" "$bg_code" "$txt"
+  else
+    printf "\e[%sm%s\e[0m" "$code" "$txt"
+  fi
+}
+
+# ------------------------------
+# Mode Functions
+# ------------------------------
+average_color_group() {
+  local items=("$@")
+  local idx=$(( (count / group) % ${#colors[@]} ))
+  local next_idx=$(( (idx + 1) % ${#colors[@]} ))
+
+  if $average; then
+    c1=($(rgb_for_code ${colors[$idx]} | tr ';' ' '))
+    c2=($(rgb_for_code ${colors[$next_idx]} | tr ';' ' '))
+    gradient=($(mix_rgb "${c1[*]}" "${c2[*]}" ${#items[@]}))
+    for i in "${!items[@]}"; do
+      colorize_rgb "${gradient[$i]}" "${items[$i]}"
+    done
+  else
+    for item in "${items[@]}"; do
+      colorize "${colors[$idx]}" "$item"
+    done
   fi
 }
 
 color_line_mode() {
+  local group_lines=()
   while IFS= read -r line || [[ -n "$line" ]]; do
-    local color_index=$(((count / group) % ${#colors[@]}))
-    colorize "${colors[$color_index]}" "$line"
-    printf "\n"
+    group_lines+=("$line")
     ((count++))
+    if (( ${#group_lines[@]} == group )); then
+      average_color_group "${group_lines[@]}"
+      printf "\n"
+      group_lines=()
+    elif (( group == 1 )); then
+      average_color_group "$line"
+      printf "\n"
+      group_lines=()
+    else
+      printf "\n"
+    fi
   done
+  if (( ${#group_lines[@]} > 0 )); then
+    average_color_group "${group_lines[@]}"
+    printf "\n"
+  fi
 }
 
 color_char_mode() {
+  local chars=()
   while IFS= read -rN1 char; do
-    case "$char" in
-      $'\033')  # Handle escape sequences (e.g. for ANSI art)
-        local esc="$char"
-        while IFS= read -rN1 next; do
-          esc+="$next"
-          [[ "$next" =~ [a-zA-Z] ]] && break
-        done
-        printf "%s" "$esc"
-        ;;
-      $'\n')
-        printf "\n"
-        ;;
-      *)
-        if [[ -n "$char" ]]; then
-          local color_index=$(((count / group) % ${#colors[@]}))
-          colorize "${colors[$color_index]}" "$char"
-          ((count++))
+    if [[ "$char" == $'\033' ]]; then
+      esc="$char"
+      while IFS= read -rN1 next; do
+        esc+="$next"
+        [[ "$next" =~ [a-zA-Z] ]] && break
+      done
+      printf "%s" "$esc"
+    elif [[ "$char" == $'\n' ]]; then
+      if (( ${#chars[@]} > 0 )); then
+        average_color_group "${chars[@]}"
+        chars=()
+      fi
+      printf "\n"
+    elif [[ -n "$char" ]]; then
+      if $average; then
+        chars+=("$char")
+        ((count++))
+        if (( ${#chars[@]} == group )); then
+          average_color_group "${chars[@]}"
+          chars=()
         fi
-        ;;
-    esac
+      else
+        idx=$(( (count / group) % ${#colors[@]} ))
+        colorize "${colors[$idx]}" "$char"
+        ((count++))
+      fi
+    fi
   done
+  if (( ${#chars[@]} > 0 )); then
+    average_color_group "${chars[@]}"
+  fi
 }
 
-# Main Execution
+# ------------------------------
+# Dispatch
+# ------------------------------
 if [[ "$mode" == "line" ]]; then
   color_line_mode
 else
